@@ -15,6 +15,7 @@ module Data.TrustChain
   , Inconsistency (..)
   , claims
   , assignments 
+  , PublicKey
   ) where
 
 import Data.Text (Text)
