@@ -1,6 +1,8 @@
 # Trust Chain
 
-An implementation of a trust chain parameterized on structure and content.
+An implementation of a trust chain parameterized on structure and content. As an example, lets
+consider a tree of attestations of content 'Person', potentially with a known name and always
+with a known 'PublicKey':
 
 ```haskell
 data Person = Person
