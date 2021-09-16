@@ -1,0 +1,100 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+module Data.TrustChain
+  ( Signed (..)
+  , validSigned
+  , TrustChain (..)
+  , validTrustChain
+  , Claim (..)
+  , addClaimant
+  , Inconsistency (..)
+  , claims
+  , assignments 
+  ) where
+
+import Data.Text (Text)
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LBS
+import Data.Functor.Identity (Identity (..))
+import Data.Binary (Binary (..))
+import qualified Data.Binary as Binary
+import GHC.Generics (Generic)
+import Data.Semigroup (All(All, getAll))
+import Cropty
+import Data.Merge
+
+encode :: Binary a => a -> ByteString
+encode a = LBS.toStrict $ Binary.encode a
+
+-- | A 'Signed' item containing its 'Signature', the piece of
+-- data which was signed, and the 'PublicKey' of the signer.
+data Signed a = Signed
+  { signature :: Signature
+  , signed :: a
+  , signedBy :: PublicKey
+  }
+  deriving (Binary, Generic)
+
+-- | Check if a 'Signed' item really was signed by the signer
+-- indicated therein. 
+validSigned :: Binary a => Signed a -> Bool
+validSigned s = verify (signedBy s) (encode (signed s)) (signature s)
+
+-- | A tree of trust of the given shape, where each internal node of the
+-- tree is signed by potentially different keys.
+data TrustChain f a =
+    Trustless a
+  | TrustProxy (Signed (f (TrustChain f a)))
+  deriving stock (Generic)
+
+deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
+
+-- | Check that the trust chain has been legitimately signed.
+validTrustChain :: (Binary a, forall x. Binary x => Binary (f x), Foldable f) => TrustChain f a -> Bool
+validTrustChain (Trustless _) = True
+validTrustChain (TrustProxy s) = validSigned s && getAll (foldMap (All . validTrustChain) (signed s))
+
+-- |
+-- A path through the trust chain.
+data Claim a = Claim [PublicKey] a
+  deriving (Eq, Ord)
+
+-- |
+-- Add a new claimant to a 'Claim'.
+addClaimant :: PublicKey -> Claim a -> Claim a
+addClaimant p (Claim ps a) = Claim (p : ps) a
+
+-- |
+-- An inconsistency with the various accounts in the trust chain
+data Inconsistency a =
+    IncompatibleClaim (Claim a) [Claim a]
+  deriving (Eq, Ord)
+
+-- |
+-- Extract all of the claims from the trust chain.
+claims :: (Eq a, Ord a, Foldable f) => TrustChain f a -> [Claim a]
+claims = \case
+  Trustless a -> [Claim [] a]
+  TrustProxy s -> addClaimant (signedBy s) <$> foldMap claims (signed s)
+
+-- | 
+-- Extract all of the assignments from the trust chain, unifying information contained
+-- within them. This is where we might find potential inconsistencies.
+assignments :: (Ord k, Eq a, Ord a, Foldable f) => (a -> k) -> Merge a a -> TrustChain f a -> Either (Inconsistency a) (Map k a)
+assignments getKey f tc = go Map.empty (claims tc) where
+  go as [] = Right (Map.map fst as)
+  go as (Claim ps a : xxs) =
+    case Map.lookup (getKey a) as of
+      Just (a', pss) -> case runMerge f a a' of
+        Just a'' -> go (Map.adjust (\_ -> (a'', Claim ps a : pss)) (getKey a) as) xxs
+        Nothing -> Left (IncompatibleClaim (Claim ps a) pss)
+      Nothing -> go (Map.insert (getKey a) (a, [Claim ps a]) as) xxs
