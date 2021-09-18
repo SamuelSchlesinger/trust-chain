@@ -7,18 +7,27 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 module Data.TrustChain
-  ( TrustChain (..)
+  ( 
+    -- * Trust Chains
+    TrustChain (..)
   , validTrustChain
+    -- * Extensions
   , Extension (..)
   , extend
+    -- * Claims
   , Claim (..)
   , addClaimant
-  , Inconsistency (..)
   , claims
+    -- * Index and Merge
   , assignments 
+    -- * Inconsistencies
+  , Inconsistency (..)
+    -- * Re-Exports from Cropty
   , PublicKey
   , PrivateKey
   , Signed(..)
+    -- * Re-Exports from Data.Merge
+  , Merge
   ) where
 
 import Data.Text (Text)
@@ -45,8 +54,11 @@ encode a = LBS.toStrict $ Binary.encode a
 data TrustChain f a =
     Trustless a
   | TrustProxy (Signed (f (TrustChain f a)))
-  deriving stock (Generic)
+  deriving (Generic, Typeable)
 
+deriving instance (Show a, forall a. Show a => Show (f a)) => Show (TrustChain f a)
+deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f a)
+deriving instance (Eq a, forall a. Eq a => Eq (f a)) => Eq (TrustChain f a)
 deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
 
 -- | Check that the trust chain has been legitimately signed.
