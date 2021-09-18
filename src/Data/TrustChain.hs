@@ -11,9 +11,8 @@ module Data.TrustChain
     -- * Trust Chains
     TrustChain (..)
   , validTrustChain
-    -- * Extensions
-  , Extension (..)
-  , extend
+  , mkTrustProxy
+  , mkTrustless
     -- * Claims
   , Claim (..)
   , addClaimant
@@ -66,18 +65,13 @@ validTrustChain :: (Binary a, forall x. Binary x => Binary (f x), Foldable f) =>
 validTrustChain (Trustless _) = True
 validTrustChain (TrustProxy s) = verifySigned s && getAll (foldMap (All . validTrustChain) (signed s))
 
--- | Describes extensions to a 'TrustChain'
-data Extension c f a = Extension
-  { newChains :: c (TrustChain f a)
-  , newItems :: c a
-  }
-
 -- | Extend the trust chain with new subchains and new items.
-extend :: (Traversable f, Binary a, forall a. Binary a => Binary (f a), forall a. Monoid (f a), Applicative f) => PrivateKey -> Extension f f a -> TrustChain f a -> IO (TrustChain f a)
-extend privateKey ext originalTrustChain = do
-  let signed = newChains ext <> fmap Trustless (newItems ext) <> pure originalTrustChain
-  s <- mkSigned privateKey signed
-  pure $ TrustProxy s
+mkTrustProxy :: (Traversable f, Binary a, forall a. Binary a => Binary (f a), forall a. Monoid (f a), Applicative f) => PrivateKey -> f (TrustChain f a) -> IO (TrustChain f a)
+mkTrustProxy privateKey layer = TrustProxy <$> mkSigned privateKey layer
+
+-- | Make a basic, trustless trust chain.
+mkTrustless :: a -> TrustChain f a
+mkTrustless = Trustless
 
 -- |
 -- A path through the trust chain.
