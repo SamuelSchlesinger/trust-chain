@@ -1,13 +1,13 @@
 cabal-version:      2.4
 name:               trust-chain
-version:            0.1.1.0
+version:            0.1.1.1
 category:           Cryptography, Crypto
 synopsis:           An implementation of a trust chain
 license:            MIT
 description:        An implementation of a trust chain.
 author:             Samuel Schlesinger
 maintainer:         sgschlesinger@gmail.com
-extra-source-files: CHANGELOG.md
+extra-source-files: CHANGELOG.md, README.md
 
 source-repository head
   type: git
