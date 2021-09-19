@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               trust-chain
-version:            0.1.1.1
+version:            0.1.1.2
 category:           Cryptography, Crypto
 synopsis:           An implementation of a trust chain
 license:            MIT

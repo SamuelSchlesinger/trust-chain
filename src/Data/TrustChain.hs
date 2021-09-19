@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -66,8 +67,22 @@ data TrustChain f a =
 
 deriving instance (Show a, forall a. Show a => Show (f a)) => Show (TrustChain f a)
 deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f a)
-deriving instance (Eq a, forall a. Eq a => Eq (f a)) => Eq (TrustChain f a)
 deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
+
+instance Eq a => Eq (TrustChain f a) where
+  Trustless a == Trustless a' = a == a'
+  Trustless _ == TrustProxy _ = False
+  TrustProxy _ == Trustless _ = False
+  TrustProxy s == TrustProxy s' = signature s == signature s' && signedBy s == signedBy s' && signedEncoded s == signedEncoded s'
+
+instance Ord a => Ord (TrustChain f a) where
+  compare (Trustless a) (Trustless a') = compare a a'
+  compare (Trustless a) _ = GT
+  compare (TrustProxy a) (Trustless _) = LT
+  compare (TrustProxy s) (TrustProxy s') =
+       compare (signature s) (signature s')
+    <> compare (signedBy s) (signedBy s')
+    <> compare (signedEncoded s) (signedEncoded s')
 
 -- | A set of 'PublicKey's we accept information from.
 newtype Whitelist = Whitelist { unWhitelist :: Set PublicKey }
@@ -90,9 +105,9 @@ validTrustChain (TrustProxy s) = verifySigned s && getAll (foldMap (All . validT
 mkTrustProxy ::
   ( Traversable f
   , Binary a
-  , forall a. Binary a => Binary (f a)
+  , Binary (f a)
+  , Binary (f (TrustChain f a))
   , forall a. Monoid (f a)
-  , Applicative f
   )
   => PrivateKey
   -> f (TrustChain f a)
