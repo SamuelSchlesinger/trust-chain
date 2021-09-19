@@ -15,7 +15,6 @@ module Data.TrustChain
   , mkTrustless
     -- * Claims
   , Claim (..)
-  , addClaimant
   , claims
     -- * Index and Merge
   , assignments 
@@ -49,7 +48,13 @@ encode :: Binary a => a -> ByteString
 encode a = LBS.toStrict $ Binary.encode a
 
 -- | A tree of trust of the given shape, where each internal node of the
--- tree is signed by potentially different keys.
+-- tree is signed by potentially different keys. @TrustChain Identity a@
+-- is a linear signature chain, whereas @TrustChain NonEmpty a@ is a tree
+-- shaped trust chain. We can keep track of metadata at each internal
+-- node of any structure using @TrustChain (Compose ((,) metadata) f) a@.
+--
+-- For those who are familiar with the free monad, you can think of this
+-- as a free monad where the internal nodes are signed by differing parties.
 data TrustChain f a =
     Trustless a
   | TrustProxy (Signed (f (TrustChain f a)))
@@ -60,13 +65,24 @@ deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f
 deriving instance (Eq a, forall a. Eq a => Eq (f a)) => Eq (TrustChain f a)
 deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
 
--- | Check that the trust chain has been legitimately signed.
+-- | Check that the trust chain has been legitimately signed. Once you receive
+-- 'True' from this function, you can be certain that all of the 'Signed'
+-- types within are truly correct.
 validTrustChain :: (Binary a, forall x. Binary x => Binary (f x), Foldable f) => TrustChain f a -> Bool
 validTrustChain (Trustless _) = True
 validTrustChain (TrustProxy s) = verifySigned s && getAll (foldMap (All . validTrustChain) (signed s))
 
 -- | Extend the trust chain with new subchains and new items.
-mkTrustProxy :: (Traversable f, Binary a, forall a. Binary a => Binary (f a), forall a. Monoid (f a), Applicative f) => PrivateKey -> f (TrustChain f a) -> IO (TrustChain f a)
+mkTrustProxy ::
+  ( Traversable f
+  , Binary a
+  , forall a. Binary a => Binary (f a)
+  , forall a. Monoid (f a)
+  , Applicative f
+  )
+  => PrivateKey
+  -> f (TrustChain f a)
+  -> IO (TrustChain f a)
 mkTrustProxy privateKey layer = TrustProxy <$> mkSigned privateKey layer
 
 -- | Make a basic, trustless trust chain.
@@ -79,11 +95,6 @@ data Claim a = Claim [PublicKey] a
   deriving (Eq, Ord, Typeable, Generic, Binary)
 
 -- |
--- Add a new claimant to a 'Claim'.
-addClaimant :: PublicKey -> Claim a -> Claim a
-addClaimant p (Claim ps a) = Claim (p : ps) a
-
--- |
 -- An inconsistency with the various accounts in the trust chain
 data Inconsistency e a =
     IncompatibleClaim e (Claim a) [Claim a]
@@ -94,13 +105,13 @@ data Inconsistency e a =
 claims :: (Eq a, Ord a, Foldable f) => TrustChain f a -> [Claim a]
 claims = \case
   Trustless a -> [Claim [] a]
-  TrustProxy s -> addClaimant (signedBy s) <$> foldMap claims (signed s)
+  TrustProxy s -> (\(Claim ps a) -> Claim (signedBy s : ps) a) <$> foldMap claims (signed s)
 
 -- | 
 -- Extract all of the assignments from the trust chain, unifying information contained
 -- within them. This is where we might find potential inconsistencies.
-assignments :: (Ord k, Eq a, Ord a, Foldable f) => (a -> k) -> Merge e a a -> TrustChain f a -> Either (Inconsistency e a) (Map k a)
-assignments getKey f tc = go Map.empty (claims tc) where
+assignments :: (Ord k, Eq a, Ord a) => (a -> k) -> Merge e a a -> [Claim a] -> Either (Inconsistency e a) (Map k a)
+assignments getKey f cs = go Map.empty cs where
   go as [] = Right (Map.map fst as)
   go as (Claim ps a : xxs) =
     case Map.lookup (getKey a) as of
