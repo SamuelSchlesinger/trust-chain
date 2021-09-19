@@ -13,6 +13,9 @@ module Data.TrustChain
   , validTrustChain
   , mkTrustProxy
   , mkTrustless
+    -- * White Lists
+  , Whitelist (..)
+  , filterByWhitelist
     -- * Claims
   , Claim (..)
   , claims
@@ -33,6 +36,7 @@ import Data.Set (Set)
 import Data.Typeable (Typeable)
 import qualified Data.Set as Set
 import Data.Map (Map)
+import Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LBS
@@ -64,6 +68,16 @@ deriving instance (Show a, forall a. Show a => Show (f a)) => Show (TrustChain f
 deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f a)
 deriving instance (Eq a, forall a. Eq a => Eq (f a)) => Eq (TrustChain f a)
 deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
+
+-- | A set of 'PublicKey's we accept information from.
+newtype Whitelist = Whitelist { unWhitelist :: Set PublicKey }
+  deriving (Eq, Ord, Show, Read, Generic, Typeable, Binary)
+
+-- | Strips out all elements of the chain which aren't rooted by someone in
+-- our whitelist, creating a forest of 'TrustChain's instead of a single one.
+filterByWhitelist :: Foldable f => Whitelist -> TrustChain f a -> [TrustChain f a]
+filterByWhitelist w@(Whitelist ws) (Trustless a) = []
+filterByWhitelist w@(Whitelist ws) (TrustProxy s) = if signedBy s `Set.member` ws then [TrustProxy s] else toList (signed s) >>= filterByWhitelist w
 
 -- | Check that the trust chain has been legitimately signed. Once you receive
 -- 'True' from this function, you can be certain that all of the 'Signed'
