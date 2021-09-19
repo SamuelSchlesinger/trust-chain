@@ -19,6 +19,7 @@ module Data.TrustChain
     -- * Claims
   , Claim (..)
   , claims
+  , claimants
     -- * Index and Merge
   , assignments 
     -- * Inconsistencies
@@ -109,13 +110,13 @@ mkTrustless = Trustless
 -- |
 -- A path through the trust chain.
 data Claim a = Claim [PublicKey] a
-  deriving (Eq, Ord, Typeable, Generic, Binary)
+  deriving (Eq, Ord, Show, Read, Typeable, Generic, Binary)
 
 -- |
 -- An inconsistency with the various accounts in the trust chain
 data Inconsistency e a =
     IncompatibleClaim e (Claim a) [Claim a]
-  deriving (Eq, Ord, Typeable, Generic, Binary)
+  deriving (Eq, Ord, Show, Read, Typeable, Generic, Binary)
 
 -- |
 -- Extract all of the claims from the trust chain.
@@ -123,6 +124,18 @@ claims :: Foldable f => TrustChain f a -> [Claim a]
 claims = \case
   Trustless a -> [Claim [] a]
   TrustProxy s -> (\(Claim ps a) -> Claim (signedBy s : ps) a) <$> foldMap claims (signed s)
+
+-- |
+-- Index the claimants by what they're claiming, using the given indexing function.
+--
+-- The mental model here should something like @k = PublicKey@ and @a = Person@. What
+-- we're doing is figuring out, for every different 'PublicKey' contained in the @Trustless@
+-- node in our 'TrustChain', all of the different variations and series of signatures which lead up to those variations (along with who assented to those accounts).
+--
+-- There is no 'Merge'ing here, in particular. This is the way to splay out all of the different realities and the sequences of
+-- 'PublicKey' which signed that particular variation (at one time or another).
+claimants :: (Ord k, Ord a) => (a -> k) -> [Claim a] -> Map k (Map a (Set [PublicKey]))
+claimants i cs = Map.fromListWith (Map.unionWith (<>)) [ (k, Map.singleton a (Set.singleton ps)) | Claim ps a <- cs, let k = i a ]
 
 -- | 
 -- Extract all of the assignments from the trust chain, unifying information contained

@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -21,6 +22,10 @@ requires :: String -> [Bool] -> IO ()
 requires msg = mapM_ (uncurry go) . zip [1..] where
   go x y = if y then pure () else putStrLn (msg <> ": " <> show x) >> exitFailure
 
+eq :: (Eq a, Show a) => String -> [(a, a)] -> IO ()
+eq msg = mapM_ (uncurry go) . zip [1..] where
+  go x (a, b) = if a == b then pure () else putStrLn (msg <> ": " <> show x <> ": " <> show a <> " /= " <> show b) >> exitFailure
+
 main :: IO ()
 main = do
   privateKey0 <- generatePrivateKey KeySize256
@@ -28,21 +33,23 @@ main = do
   let trustChain0 :: TrustChain [] String = Trustless "Hello"
   trustChain1 <- mkTrustProxy privateKey0 [mkTrustless "Hi", trustChain0]
   trustChain2 <- mkTrustProxy privateKey1 [mkTrustless "Hey", trustChain1]
-  let roundTrip f g x = x == f (g x)
+  let roundTrip f g x = (x, f (g x))
   requires "validTrustChain"
     [ validTrustChain trustChain0
     , validTrustChain trustChain1
     , validTrustChain trustChain2
     ]
-  requires "claims"
-    [ claims trustChain0 == [Claim [] "Hello"]
-    , claims trustChain1 == [Claim [privateToPublic privateKey0] "Hi", Claim [privateToPublic privateKey0] "Hello"]
-    , claims trustChain2 == [Claim [privateToPublic privateKey1] "Hey", Claim [privateToPublic privateKey1, privateToPublic privateKey0] "Hi", Claim [privateToPublic privateKey1, privateToPublic privateKey0] "Hello"] 
+  eq "claimants"
+    [ (claimants id (claims trustChain0),  Map.fromList [("Hello", Map.fromList [("Hello", Set.singleton [])])]) ]
+  eq "claims"
+    [ (claims trustChain0, [Claim [] "Hello"])
+    , (claims trustChain1, [Claim [privateToPublic privateKey0] "Hi", Claim [privateToPublic privateKey0] "Hello"])
+    , (claims trustChain2, [Claim [privateToPublic privateKey1] "Hey", Claim [privateToPublic privateKey1, privateToPublic privateKey0] "Hi", Claim [privateToPublic privateKey1, privateToPublic privateKey0] "Hello"])
     ]
-  requires "assignments"
-    [ assignments id (required id .? ["bad id"]) (claims trustChain0) == Right (Map.fromList [("Hello", "Hello")])
+  eq "assignments"
+    [ (assignments id (required @[String] id .? ["bad id"]) (claims trustChain0), Right (Map.fromList [("Hello", "Hello")]))
     ]
-  requires "encode/decode" $ map (roundTrip decode encode) [trustChain0, trustChain1, trustChain2]
+  eq "encode/decode" $ map (roundTrip decode encode) [trustChain0, trustChain1, trustChain2]
   person
 
 type Time = Integer
@@ -53,7 +60,7 @@ data Person = Person
   , emails :: Set Text
   , posts :: Set (Time, Text)
   }
-  deriving (Eq, Ord, Binary, Generic)
+  deriving (Eq, Ord, Binary, Generic, Show, Read)
 
 mergePerson :: Merge [String] Person Person
 mergePerson =
@@ -74,7 +81,7 @@ person = do
   tc1 <- mkTrustProxy privateKey1 [Trustless myfriend]
   tc0' <- mkTrustProxy privateKey0 [tc0, tc1]
   tc1' <- mkTrustProxy privateKey1 [tc0, tc1]
-  requires "person"
-    [ assignments pubKey mergePerson (claims tc1') == assignments pubKey mergePerson (claims tc0')
-    , assignments pubKey mergePerson (claims tc0') == Right (Map.fromList [(privateToPublic privateKey0, myself), (privateToPublic privateKey1, myfriend)])
+  eq "person"
+    [ (assignments pubKey mergePerson (claims tc1'), assignments pubKey mergePerson (claims tc0'))
+    , (assignments pubKey mergePerson (claims tc0'), Right (Map.fromList [(privateToPublic privateKey0, myself), (privateToPublic privateKey1, myfriend)]))
     ]
