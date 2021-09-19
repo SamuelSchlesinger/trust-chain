@@ -65,7 +65,7 @@ instance Eq a => Eq (TrustChain f a) where
   Trustless a == Trustless a' = a == a'
   Trustless _ == TrustProxy _ = False
   TrustProxy _ == Trustless _ = False
-  TrustProxy s == TrustProxy s' = signature s == signature s' && signedBy s == signedBy s' && signedEncoded s == signedEncoded s'
+  TrustProxy s == TrustProxy s' = s == s'
 
 instance Ord a => Ord (TrustChain f a) where
   compare (Trustless a) (Trustless a') = compare a a'
