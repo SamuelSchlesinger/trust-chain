@@ -67,7 +67,7 @@ data TrustChain f a =
 
 deriving instance (Show a, forall a. Show a => Show (f a)) => Show (TrustChain f a)
 deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f a)
-deriving instance (Binary a, forall a. Binary a => Binary (f a)) => Binary (TrustChain f a)
+deriving instance (Binary a, Binary (f (TrustChain f a))) => Binary (TrustChain f a)
 
 instance Eq a => Eq (TrustChain f a) where
   Trustless a == Trustless a' = a == a'
@@ -97,17 +97,14 @@ filterByWhitelist w@(Whitelist ws) (TrustProxy s) = if signedBy s `Set.member` w
 -- | Check that the trust chain has been legitimately signed. Once you receive
 -- 'True' from this function, you can be certain that all of the 'Signed'
 -- types within are truly correct.
-validTrustChain :: (Binary a, forall x. Binary x => Binary (f x), Foldable f) => TrustChain f a -> Bool
+validTrustChain :: (Binary a, Binary (f (TrustChain f a)), Foldable f) => TrustChain f a -> Bool
 validTrustChain (Trustless _) = True
 validTrustChain (TrustProxy s) = verifySigned s && getAll (foldMap (All . validTrustChain) (signed s))
 
 -- | Extend the trust chain with new subchains and new items.
 mkTrustProxy ::
   ( Traversable f
-  , Binary a
-  , Binary (f a)
   , Binary (f (TrustChain f a))
-  , forall a. Monoid (f a)
   )
   => PrivateKey
   -> f (TrustChain f a)
@@ -131,7 +128,7 @@ data Inconsistency e a =
 
 -- |
 -- Extract all of the claims from the trust chain.
-claims :: (Eq a, Ord a, Foldable f) => TrustChain f a -> [Claim a]
+claims :: Foldable f => TrustChain f a -> [Claim a]
 claims = \case
   Trustless a -> [Claim [] a]
   TrustProxy s -> (\(Claim ps a) -> Claim (signedBy s : ps) a) <$> foldMap claims (signed s)
@@ -139,7 +136,7 @@ claims = \case
 -- | 
 -- Extract all of the assignments from the trust chain, unifying information contained
 -- within them. This is where we might find potential inconsistencies.
-assignments :: (Ord k, Eq a, Ord a) => (a -> k) -> Merge e a a -> [Claim a] -> Either (Inconsistency e a) (Map k a)
+assignments :: Ord k => (a -> k) -> Merge e a a -> [Claim a] -> Either (Inconsistency e a) (Map k a)
 assignments getKey f cs = go Map.empty cs where
   go as [] = Right (Map.map fst as)
   go as (Claim ps a : xxs) =
