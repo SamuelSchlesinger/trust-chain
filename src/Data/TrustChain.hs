@@ -3,7 +3,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -32,25 +31,17 @@ module Data.TrustChain
   , Merge
   ) where
 
-import Data.Text (Text)
 import Data.Set (Set)
 import Data.Typeable (Typeable)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as LBS
-import Data.Functor.Identity (Identity (..))
 import Data.Binary (Binary (..))
-import qualified Data.Binary as Binary
 import GHC.Generics (Generic)
 import Data.Semigroup (All(All, getAll))
 import Cropty
 import Data.Merge
-
-encode :: Binary a => a -> ByteString
-encode a = LBS.toStrict $ Binary.encode a
 
 -- | A tree of trust of the given shape, where each internal node of the
 -- tree is signed by potentially different keys. @TrustChain Identity a@
@@ -65,8 +56,8 @@ data TrustChain f a =
   | TrustProxy (Signed (f (TrustChain f a)))
   deriving (Generic, Typeable)
 
-deriving instance (Show a, forall a. Show a => Show (f a)) => Show (TrustChain f a)
-deriving instance (Read a, forall a. Read a => Read (f a)) => Read (TrustChain f a)
+deriving instance (Show a, Show (f (TrustChain f a))) => Show (TrustChain f a)
+deriving instance (Read a, Read (f (TrustChain f a))) => Read (TrustChain f a)
 deriving instance (Binary a, Binary (f (TrustChain f a))) => Binary (TrustChain f a)
 
 instance Eq a => Eq (TrustChain f a) where
@@ -77,8 +68,8 @@ instance Eq a => Eq (TrustChain f a) where
 
 instance Ord a => Ord (TrustChain f a) where
   compare (Trustless a) (Trustless a') = compare a a'
-  compare (Trustless a) _ = GT
-  compare (TrustProxy a) (Trustless _) = LT
+  compare (Trustless _) _ = GT
+  compare (TrustProxy _) (Trustless _) = LT
   compare (TrustProxy s) (TrustProxy s') =
        compare (signature s) (signature s')
     <> compare (signedBy s) (signedBy s')
@@ -91,7 +82,7 @@ newtype Whitelist = Whitelist { unWhitelist :: Set PublicKey }
 -- | Strips out all elements of the chain which aren't rooted by someone in
 -- our whitelist, creating a forest of 'TrustChain's instead of a single one.
 filterByWhitelist :: Foldable f => Whitelist -> TrustChain f a -> [TrustChain f a]
-filterByWhitelist w@(Whitelist ws) (Trustless a) = []
+filterByWhitelist _ (Trustless _) = []
 filterByWhitelist w@(Whitelist ws) (TrustProxy s) = if signedBy s `Set.member` ws then [TrustProxy s] else toList (signed s) >>= filterByWhitelist w
 
 -- | Check that the trust chain has been legitimately signed. Once you receive
